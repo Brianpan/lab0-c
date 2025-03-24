@@ -75,18 +75,10 @@ element_t *q_remove_head(struct list_head *head, char *sp, size_t bufsize)
 /* Remove an element from tail of queue */
 element_t *q_remove_tail(struct list_head *head, char *sp, size_t bufsize)
 {
+    // way to reuse q_remove_head
     if (!head || list_empty(head))
         return NULL;
-
-    struct list_head *node = head->prev;
-
-    element_t *e = list_entry(node, element_t, list);
-    if (sp)
-        copy_to_buf(&sp, &e->value, bufsize);
-
-    list_del(node);
-
-    return e;
+    return q_remove_head(head->prev->prev, sp, bufsize);
 }
 
 /* Return number of elements in queue */
@@ -262,16 +254,94 @@ void q_reverseK(struct list_head *head, int k)
         head->prev = first;
     // https://leetcode.com/problems/reverse-nodes-in-k-group/
 }
+static void q_merge_two(struct list_head *first,
+                        struct list_head *second,
+                        bool descend)
+{
+    if (!first || !second)
+        return;
+    struct list_head tmp_head;
+    INIT_LIST_HEAD(&tmp_head);
+    int flag = descend ? -1 : 1;
+
+    while (!list_empty(first) && !list_empty(second)) {
+        element_t *first_node = list_first_entry(first, element_t, list),
+                  *second_node = list_first_entry(second, element_t, list);
+
+        char *first_val = first_node->value, *second_val = second_node->value;
+
+        element_t *min_node =
+            flag * strcmp(first_val, second_val) < 0 ? first_node : second_node;
+        list_move_tail(&min_node->list, &tmp_head);
+    }
+
+    list_splice_tail_init(first, &tmp_head);
+    list_splice_tail_init(second, &tmp_head);
+
+    list_splice(&tmp_head, first);
+    return;
+}
+
+void q_merge_sort(struct list_head *head, bool descend)
+{
+    if (!head || list_empty(head) || list_is_singular(head))
+        return;
+    struct list_head *slow = head;
+    for (struct list_head *fast = head->next;
+         fast != head && fast->next != head; fast = fast->next->next)
+        slow = slow->next;
+
+    // second list init
+    struct list_head tmp_head;
+    list_cut_position(&tmp_head, head, slow);
+
+    q_merge_sort(head, descend);
+    q_merge_sort(&tmp_head, descend);
+
+    q_merge_two(head, &tmp_head, descend);
+}
 
 /* Sort elements of queue in ascending/descending order */
-void q_sort(struct list_head *head, bool descend) {}
+void q_sort(struct list_head *head, bool descend)
+{
+    q_merge_sort(head, descend);
+}
 
+static int q_remove_nodes(struct list_head *head, bool descend)
+{
+    if (!head || list_empty(head))
+        return 0;
+    if (list_is_singular(head))
+        return 1;
+
+    struct list_head *prev = head->prev, *curr = prev->prev;
+    element_t *prev_node = list_entry(prev, element_t, list);
+
+    int sz = 1;
+    int flag = descend ? -1 : 1;
+    while (curr != head) {
+        struct list_head *next_prev = curr->prev;
+        element_t *cur_node = list_entry(curr, element_t, list);
+        if (flag * strcmp(cur_node->value, prev_node->value) > 0) {
+            list_del(curr);
+            free(cur_node->value);
+            free(cur_node);
+        } else {
+            prev = curr;
+            prev_node = list_entry(prev, element_t, list);
+            sz++;
+        }
+
+        curr = next_prev;
+    }
+    return sz;
+}
 /* Remove every node which has a node with a strictly less value anywhere to
  * the right side of it */
 int q_ascend(struct list_head *head)
 {
     // https://leetcode.com/problems/remove-nodes-from-linked-list/
-    return 0;
+    return q_remove_nodes(head, false);
 }
 
 /* Remove every node which has a node with a strictly greater value anywhere to
@@ -279,7 +349,7 @@ int q_ascend(struct list_head *head)
 int q_descend(struct list_head *head)
 {
     // https://leetcode.com/problems/remove-nodes-from-linked-list/
-    return 0;
+    return q_remove_nodes(head, true);
 }
 
 /* Merge all the queues into one sorted queue, which is in ascending/descending
