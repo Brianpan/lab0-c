@@ -67,7 +67,7 @@ bool q_insert_tail(struct list_head *head, char *s)
 /* Copy element var */
 void copy_to_buf(char **dst, char **src, size_t bufsize)
 {
-    size_t end = (bufsize - 1);
+    size_t end = bufsize - 1;
     if (strlen(*src) >= end) {
         memcpy(*dst, *src, end);
         *dst[end] = '\0';
@@ -84,8 +84,11 @@ element_t *q_remove_head(struct list_head *head, char *sp, size_t bufsize)
     struct list_head *node = head->next;
 
     element_t *e = list_entry(node, element_t, list);
-    if (sp)
-        copy_to_buf(&sp, &e->value, bufsize);
+    if (sp) {
+        strncpy(sp, e->value, bufsize - 1);
+        sp[bufsize - 1] = '\0';
+    }
+
     list_del(node);
 
     return e;
@@ -408,4 +411,3 @@ int q_merge(struct list_head *head, bool descend)
 
     return first_qc->size;
 }
-
