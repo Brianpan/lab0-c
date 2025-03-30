@@ -1056,6 +1056,69 @@ static bool do_next(int argc, char *argv[])
     return q_show(0);
 }
 
+static struct list_head *get_list_head_n(int n)
+{
+    struct list_head *cur = current->q->next;
+    while (n--)
+        cur = cur->next;
+    
+    return cur;
+}
+
+static bool do_shuffle(int argc, char *argv[])
+{
+    if (argc != 1) {
+        report(1, "%s takes no arguments", argv[0]);
+        return false;
+    }
+
+    if (!current) {
+        report(3, "Warning: Try to operate null queue");
+        return false;
+    }
+
+    int cnt = q_size(current->q);
+    if (!cnt) {
+        report(3, "Warning: Try to operate empty queue");
+        return false;
+    } else if (cnt < 2)
+        return q_show(0);
+
+    struct list_head *tail = current->q->prev;
+
+    for (; cnt > 1; cnt--, tail = tail->prev) {
+        int idx = rand() % cnt;
+        struct list_head *old = get_list_head_n(idx);
+        if (old == tail)
+            continue;
+        // adjacent nodes
+        if (old->next == tail) {
+            old->prev->next = tail;
+            tail->next->prev = old;
+            old->next = tail->next;
+            tail->prev = old->prev;
+            tail->next = old;
+            old->prev = tail;
+            goto next_tail;
+        }
+        // swap between old and tail
+        struct list_head *tn = tail->next, *tp = tail->prev;
+        old->next->prev = tail;
+        old->prev->next = tail;
+        tail->next = old->next;
+        tail->prev = old->prev;
+        tn->prev = old;
+        tp->next = old;
+        old->next = tn;
+        old->prev = tp;
+    next_tail:
+        // actual tail is moved to old
+        tail = old;
+    }
+
+    return q_show(0);
+}
+
 static void console_init()
 {
     ADD_COMMAND(new, "Create new queue", "");
@@ -1096,6 +1159,7 @@ static void console_init()
                 "");
     ADD_COMMAND(reverseK, "Reverse the nodes of the queue 'K' at a time",
                 "[K]");
+    ADD_COMMAND(shuffle, "Shuffle the nodes of the queue", "");
     add_param("length", &string_length, "Maximum length of displayed string",
               NULL);
     add_param("malloc", &fail_probability, "Malloc failure probability percent",
@@ -1445,3 +1509,4 @@ int main(int argc, char *argv[])
 
     return !ok;
 }
+
