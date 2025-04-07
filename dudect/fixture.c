@@ -42,6 +42,8 @@
 
 #define ENOUGH_MEASURE 10000
 #define TEST_TRIES 10
+#define N_PERCENTILE 100
+#define DROP_PERCENTILE 95
 
 static t_context_t *t;
 
@@ -64,14 +66,18 @@ static void differentiate(int64_t *exec_times,
         exec_times[i] = after_ticks[i] - before_ticks[i];
 }
 
-static void update_statistics(const int64_t *exec_times, uint8_t *classes)
+static void update_statistics(const int64_t *exec_times,
+                              uint8_t *classes,
+                              int64_t *percentiles)
 {
     for (size_t i = 0; i < N_MEASURES; i++) {
         int64_t difference = exec_times[i];
         /* CPU cycle counter overflowed or dropped measurement */
         if (difference <= 0)
             continue;
-
+        // drop data >= 95%
+        if (difference > percentiles[DROP_PERCENTILE - 1])
+            continue;
         /* do a t-test on the execution time */
         t_push(t, difference, classes[i]);
     }
@@ -116,6 +122,37 @@ static bool report(void)
     return true;
 }
 
+static int compare_int64(const void *a, const void *b)
+{
+    int64_t va = *(const int64_t *) a;
+    int64_t vb = *(const int64_t *) b;
+
+    if (va < vb)
+        return -1;
+    if (va > vb)
+        return 1;
+    return 0;
+}
+
+static int64_t percentile(int64_t *a_sorted, double which, size_t size)
+{
+    size_t arr_position = (size_t) ((double) size * which);
+    assert(arr_position < size);
+    return a_sorted[arr_position];
+}
+
+static void prepare_percentile(int64_t *exec_times,
+                               uint8_t *classes,
+                               int64_t *percentiles)
+{
+    qsort(exec_times, N_MEASURES, sizeof(int64_t), compare_int64);
+    for (size_t i = 0; i < N_PERCENTILE; i++) {
+        percentiles[i] = percentile(
+            exec_times, 1 - (pow(0.5, 10 * (double) (i + 1) / N_PERCENTILE)),
+            N_MEASURES);
+    }
+}
+
 static bool doit(int mode)
 {
     int64_t *before_ticks = calloc(N_MEASURES + 1, sizeof(int64_t));
@@ -123,6 +160,7 @@ static bool doit(int mode)
     int64_t *exec_times = calloc(N_MEASURES, sizeof(int64_t));
     uint8_t *classes = calloc(N_MEASURES, sizeof(uint8_t));
     uint8_t *input_data = calloc(N_MEASURES * CHUNK_SIZE, sizeof(uint8_t));
+    int64_t *percentiles = calloc(N_PERCENTILE, sizeof(int64_t));
 
     if (!before_ticks || !after_ticks || !exec_times || !classes ||
         !input_data) {
@@ -133,7 +171,8 @@ static bool doit(int mode)
 
     bool ret = measure(before_ticks, after_ticks, input_data, mode);
     differentiate(exec_times, before_ticks, after_ticks);
-    update_statistics(exec_times, classes);
+    prepare_percentile(exec_times, classes, percentiles);
+    update_statistics(exec_times, classes, percentiles);
     ret &= report();
 
     free(before_ticks);
@@ -179,3 +218,4 @@ static bool test_const(char *text, int mode)
 #define _(x) DUT_FUNC_IMPL(x)
 DUT_FUNCS
 #undef _
+
