@@ -5,6 +5,8 @@
 #include "list.h"
 #include "queue.h"
 
+#define IS_QUICKSORT 1
+
 /* Create an empty queue */
 struct list_head *q_new()
 {
@@ -26,8 +28,7 @@ void q_free(struct list_head *head)
             continue;
         element_t *ele = list_entry(ptr, element_t, list);
         list_del(ptr);
-        free(ele->value);
-        free(ele);
+        q_release_element(ele);
     }
     // head must be freed too
     free(head);
@@ -318,10 +319,56 @@ void q_merge_sort(struct list_head *head, bool descend)
     q_merge_two(head, &tmp_head, descend);
 }
 
+static inline int cmp_ascend(char *a, char *b)
+{
+    return strcmp(a, b);
+}
+
+static inline int cmp_descend(char *a, char *b)
+{
+    return -cmp_ascend(a, b);
+}
+
+static void list_quicksort(struct list_head *head, bool descend)
+{
+    struct list_head list_less, list_greater;
+    element_t *pivot;
+    element_t *item = NULL, *is = NULL;
+    int (*cmpstr)(char *, char *) = descend ? cmp_descend : cmp_ascend;
+
+    if (list_empty(head) || list_is_singular(head))
+        return;
+
+    INIT_LIST_HEAD(&list_less);
+    INIT_LIST_HEAD(&list_greater);
+
+    // get the pivot and remove it from the circular list
+    pivot = list_first_entry(head, element_t, list);
+    list_del(&pivot->list);
+
+    list_for_each_entry_safe(item, is, head, list) {
+        if (cmpstr(item->value, pivot->value) < 0)
+            list_move_tail(&item->list, &list_less);
+        else
+            list_move_tail(&item->list, &list_greater);
+    }
+
+    list_quicksort(&list_less, descend);
+    list_quicksort(&list_greater, descend);
+
+    list_add(&pivot->list, head);
+    list_splice(&list_less, head);
+    list_splice_tail(&list_greater, head);
+}
+
 /* Sort elements of queue in ascending/descending order */
 void q_sort(struct list_head *head, bool descend)
 {
+#ifdef IS_QUICKSORT
+    list_quicksort(head, descend);
+#else
     q_merge_sort(head, descend);
+#endif
 }
 
 static int q_remove_nodes(struct list_head *head, bool descend)
@@ -411,3 +458,4 @@ int q_merge(struct list_head *head, bool descend)
 
     return first_qc->size;
 }
+
